@@ -106,6 +106,55 @@ textarea {
   text-transform: uppercase;
 }
 
+.api-key-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(39, 55, 77, 0.07);
+}
+
+.api-key-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #334155;
+}
+
+.api-key-header span {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.api-key-box input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d4dbe7;
+  border-radius: 10px;
+  outline: none;
+  background: #ffffff;
+  color: #172033;
+}
+
+.api-key-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.api-key-actions button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .search-box {
   display: flex;
   gap: 10px;

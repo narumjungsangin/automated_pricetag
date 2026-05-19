@@ -57,6 +57,8 @@ const DEFAULT_DRUG_INFO: DrugInfo = {
   price: '',
 };
 
+const SERVICE_KEY_STORAGE_KEY = 'pharmacy-price-tag-service-key';
+
 const REVIEW_VALUES: Record<DrugInfoField, string[]> = {
   itemName: ['새 가격표', ''],
   symptoms: ['주요 증상을 입력하세요', '증상 정보 없음', ''],
@@ -182,16 +184,25 @@ const parseApiResponse = (responseText: string): EasyDrugApiPayload => {
 
 function App() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [serviceKeyInput, setServiceKeyInput] = useState('');
+  const [savedServiceKey, setSavedServiceKey] = useState('');
   const [searchResults, setSearchResults] = useState<EasyDrugApiItem[]>([]);
   const [priceTags, setPriceTags] = useState<DrugInfo[]>([DEFAULT_DRUG_INFO]);
   const [selectedTagId, setSelectedTagId] = useState(DEFAULT_DRUG_INFO.id);
   const [toast, setToast] = useState<Toast | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  const serviceKey = import.meta.env.VITE_PUBLIC_DATA_SERVICE_KEY as string | undefined;
+  const envServiceKey = import.meta.env.VITE_PUBLIC_DATA_SERVICE_KEY as string | undefined;
+  const serviceKey = savedServiceKey || envServiceKey;
   const selectedTag = priceTags.find((tag) => tag.id === selectedTagId) ?? priceTags[0];
 
   const canSearch = useMemo(() => searchQuery.trim().length > 0 && !isSearching, [isSearching, searchQuery]);
+
+  useEffect(() => {
+    const storedServiceKey = window.localStorage.getItem(SERVICE_KEY_STORAGE_KEY) ?? '';
+    setSavedServiceKey(storedServiceKey);
+    setServiceKeyInput(storedServiceKey);
+  }, []);
 
   useEffect(() => {
     if (!toast) {
@@ -208,6 +219,26 @@ function App() {
       message,
       type,
     });
+  };
+
+  const saveServiceKey = () => {
+    const nextServiceKey = serviceKeyInput.trim();
+
+    if (!nextServiceKey) {
+      showToast('API 키를 입력해주세요.', 'info');
+      return;
+    }
+
+    window.localStorage.setItem(SERVICE_KEY_STORAGE_KEY, nextServiceKey);
+    setSavedServiceKey(nextServiceKey);
+    showToast('API 키를 저장했습니다.', 'success');
+  };
+
+  const clearServiceKey = () => {
+    window.localStorage.removeItem(SERVICE_KEY_STORAGE_KEY);
+    setSavedServiceKey('');
+    setServiceKeyInput('');
+    showToast('저장된 API 키를 삭제했습니다.', 'info');
   };
 
   const applyDrugToSelectedTag = (drug: EasyDrugApiItem) => {
@@ -231,7 +262,7 @@ function App() {
     }
 
     if (!serviceKey) {
-      showToast('.env 파일에 VITE_PUBLIC_DATA_SERVICE_KEY를 설정해주세요.', 'error');
+      showToast('API 키를 먼저 입력하고 저장해주세요.', 'error');
       return;
     }
 
@@ -335,6 +366,23 @@ function App() {
           <p className="eyebrow">Pharmacy Label Maker</p>
           <h1>약국 가격표 생성기</h1>
           <p>약명을 검색한 뒤, 여러 가격표를 모아 한 번에 출력하세요.</p>
+        </div>
+
+        <div className="api-key-box">
+          <div className="api-key-header">
+            <strong>공공데이터 API 키</strong>
+            <span>{savedServiceKey || envServiceKey ? '사용 가능' : '미설정'}</span>
+          </div>
+          <input
+            type="password"
+            placeholder="API 키를 입력한 뒤 저장"
+            value={serviceKeyInput}
+            onChange={(event) => setServiceKeyInput(event.target.value)}
+          />
+          <div className="api-key-actions">
+            <button type="button" onClick={saveServiceKey}>저장</button>
+            <button type="button" onClick={clearServiceKey}>삭제</button>
+          </div>
         </div>
 
         <div className="tag-list">
