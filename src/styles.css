@@ -109,24 +109,69 @@ textarea {
 .api-key-box {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
+  gap: 0;
+  padding: 12px 14px;
   border-radius: 18px;
   background: #ffffff;
   box-shadow: 0 14px 30px rgba(39, 55, 77, 0.07);
+}
+
+.api-key-box.is-open {
+  gap: 12px;
+  padding: 16px;
 }
 
 .api-key-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   color: #334155;
 }
 
-.api-key-header span {
-  color: #2563eb;
+.api-key-status {
+  display: block;
+  margin-top: 3px;
   font-size: 13px;
   font-weight: 900;
+}
+
+.api-key-status.success {
+  color: #047857;
+}
+
+.api-key-status.error {
+  color: #dc2626;
+}
+
+.api-key-header button {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.api-key-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.api-key-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
 }
 
 .api-key-box input {
@@ -413,6 +458,29 @@ textarea {
   background: linear-gradient(135deg, #0056b3, #1d4ed8);
   font-size: 16px;
   box-shadow: 0 14px 28px rgba(29, 78, 216, 0.24);
+}
+
+.app-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.app-footer a {
+  color: #2563eb;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  text-decoration: underline;
 }
 
 .preview-panel {

@@ -186,6 +186,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceKeyInput, setServiceKeyInput] = useState('');
   const [savedServiceKey, setSavedServiceKey] = useState('');
+  const [isApiKeyBoxOpen, setIsApiKeyBoxOpen] = useState(false);
+  const [hasServiceKeyError, setHasServiceKeyError] = useState(false);
   const [searchResults, setSearchResults] = useState<EasyDrugApiItem[]>([]);
   const [priceTags, setPriceTags] = useState<DrugInfo[]>([DEFAULT_DRUG_INFO]);
   const [selectedTagId, setSelectedTagId] = useState(DEFAULT_DRUG_INFO.id);
@@ -194,6 +196,8 @@ function App() {
 
   const envServiceKey = import.meta.env.VITE_PUBLIC_DATA_SERVICE_KEY as string | undefined;
   const serviceKey = savedServiceKey || envServiceKey;
+  const hasServiceKey = Boolean(serviceKey);
+  const needsServiceKeyInput = !hasServiceKey || hasServiceKeyError;
   const selectedTag = priceTags.find((tag) => tag.id === selectedTagId) ?? priceTags[0];
 
   const canSearch = useMemo(() => searchQuery.trim().length > 0 && !isSearching, [isSearching, searchQuery]);
@@ -202,7 +206,8 @@ function App() {
     const storedServiceKey = window.localStorage.getItem(SERVICE_KEY_STORAGE_KEY) ?? '';
     setSavedServiceKey(storedServiceKey);
     setServiceKeyInput(storedServiceKey);
-  }, []);
+    setIsApiKeyBoxOpen(!storedServiceKey && !envServiceKey);
+  }, [envServiceKey]);
 
   useEffect(() => {
     if (!toast) {
@@ -231,6 +236,7 @@ function App() {
 
     window.localStorage.setItem(SERVICE_KEY_STORAGE_KEY, nextServiceKey);
     setSavedServiceKey(nextServiceKey);
+    setHasServiceKeyError(false);
     showToast('API 키를 저장했습니다.', 'success');
   };
 
@@ -238,6 +244,7 @@ function App() {
     window.localStorage.removeItem(SERVICE_KEY_STORAGE_KEY);
     setSavedServiceKey('');
     setServiceKeyInput('');
+    setHasServiceKeyError(false);
     showToast('저장된 API 키를 삭제했습니다.', 'info');
   };
 
@@ -262,6 +269,7 @@ function App() {
     }
 
     if (!serviceKey) {
+      setIsApiKeyBoxOpen(true);
       showToast('API 키를 먼저 입력하고 저장해주세요.', 'error');
       return;
     }
@@ -273,6 +281,8 @@ function App() {
       const responseText = await response.text();
 
       if (!response.ok) {
+        setHasServiceKeyError(true);
+        setIsApiKeyBoxOpen(true);
         throw new Error(`API 응답 오류: ${response.status} ${responseText.slice(0, 120)}`);
       }
 
@@ -281,8 +291,12 @@ function App() {
       const resultMsg = data.resultMsg;
 
       if (resultCode && resultCode !== '00') {
+        setHasServiceKeyError(true);
+        setIsApiKeyBoxOpen(true);
         throw new Error(`API 오류: ${resultMsg ?? resultCode}`);
       }
+
+      setHasServiceKeyError(false);
 
       const drugs = normalizeItems(data.items);
 
@@ -366,23 +380,44 @@ function App() {
           <p className="eyebrow">Pharmacy Label Maker</p>
           <h1>약국 가격표 생성기</h1>
           <p>약명을 검색한 뒤, 여러 가격표를 모아 한 번에 출력하세요.</p>
+        
+          <p>Made by Junsu Yoon</p>
         </div>
 
-        <div className="api-key-box">
+        <div className={isApiKeyBoxOpen ? 'api-key-box is-open' : 'api-key-box'}>
           <div className="api-key-header">
-            <strong>공공데이터 API 키</strong>
-            <span>{savedServiceKey || envServiceKey ? '사용 가능' : '미설정'}</span>
+            <div>
+              <strong>공공데이터 API 키</strong>
+              <span className={needsServiceKeyInput ? 'api-key-status error' : 'api-key-status success'}>
+                {needsServiceKeyInput ? 'API 입력 필요' : '사용 가능'}
+              </span>
+            </div>
+            <button type="button" onClick={() => setIsApiKeyBoxOpen((prev) => !prev)}>
+              {isApiKeyBoxOpen ? '접기' : 'API 키 설정'}
+            </button>
           </div>
-          <input
-            type="password"
-            placeholder="API 키를 입력한 뒤 저장"
-            value={serviceKeyInput}
-            onChange={(event) => setServiceKeyInput(event.target.value)}
-          />
-          <div className="api-key-actions">
-            <button type="button" onClick={saveServiceKey}>저장</button>
-            <button type="button" onClick={clearServiceKey}>삭제</button>
-          </div>
+          {isApiKeyBoxOpen && (
+            <div className="api-key-content">
+              <a
+                className="api-key-link"
+                href="https://www.data.go.kr/data/15075057/openapi.do"
+                target="_blank"
+                rel="noreferrer"
+              >
+                API 키 발급 받기
+              </a>
+              <input
+                type="password"
+                placeholder="API 키를 입력한 뒤 저장 (Encoding)"
+                value={serviceKeyInput}
+                onChange={(event) => setServiceKeyInput(event.target.value)}
+              />
+              <div className="api-key-actions">
+                <button type="button" onClick={saveServiceKey}>저장</button>
+                <button type="button" onClick={clearServiceKey}>삭제</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="tag-list">
@@ -463,6 +498,12 @@ function App() {
         </div>
 
         <button className="print-btn" type="button" onClick={handlePrint}>프린터로 출력하기</button>
+
+        <footer className="app-footer">
+          <span>Made by Junsu Yoon</span>
+          <a href="https://github.com/narumjungsangin" target="_blank" rel="noreferrer">GitHub @narumjungsangin</a>
+          <span>문의사항: <a href="mailto:joonst26@gmail.com">joonst26@gmail.com</a></span>
+        </footer>
       </section>
 
       <section className="preview-panel" aria-label="가격표 미리보기">
