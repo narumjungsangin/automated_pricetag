@@ -13,16 +13,19 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "electron": "latest",
-    "electron-builder": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "electron": "latest",
+    "electron-builder": "latest"
   },
   "build": {
     "appId": "com.pharmacy.pricetag",
