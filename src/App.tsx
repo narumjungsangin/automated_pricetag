@@ -51,6 +51,8 @@ type TagStyle = {
   fontFooter: number;
 };
 
+type ExcelDrugRow = { itemName: string; subtitle: string; symptoms: string; extra: string };
+
 type AppTab = 'editor' | 'help';
 type AiProvider = 'openai' | 'gemini';
 
@@ -87,6 +89,36 @@ const FOLLOWUP_AI_PROMPT = `당신은 약국 가격표 편집 전문가입니다
 {"itemName": null, "symptoms": null, "category": null, "unit": null, "price": null}`;
 const TAG_STYLE_STORAGE_KEY = 'pharmacy-tag-style';
 const TAG_SIZE_STORAGE_KEY = 'pharmacy-tag-size';
+const EXCEL_DB_PATH_KEY = 'pharmacy-excel-db-path';
+
+type ElectronFileResult = { filePath: string; data: string } | null;
+declare global {
+  interface Window {
+    electronAPI?: {
+      openExcelDialog: () => Promise<ElectronFileResult>;
+      readExcelFile: (filePath: string) => Promise<ElectronFileResult>;
+    };
+  }
+}
+
+const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+
+const parseExcelDbFromBase64 = (base64: string): ExcelDrugRow[] => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const workbook = XLSX.read(bytes, { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][];
+  return rows
+    .filter((row) => row.some((cell) => cell !== undefined && cell !== ''))
+    .map((row) => ({
+      itemName: String(row[0] ?? '').trim(),
+      subtitle: String(row[1] ?? '').trim(),
+      symptoms: String(row[2] ?? '').trim(),
+      extra: String(row[3] ?? '').trim(),
+    }));
+};
 
 const REVIEW_VALUES: Record<DrugInfoField, string[]> = {
   itemName: ['새 가격표', ''],
@@ -256,25 +288,25 @@ const HelpPage = () => {
       <div className="help-section">
         <div className="help-section-num">04</div>
         <div className="help-section-body">
-          <h3>📊 엑셀로 대량 가격표 생성</h3>
-          <p>.xlsx 또는 .csv 파일을 업로드하면 각 행이 가격표 1개로 자동 변환됩니다.</p>
-          <div className="help-table-wrap">
-            <table className="help-table">
-              <thead>
-                <tr><th>A열 (약명)</th><th>B열 (주요 증상)</th><th>C열 (약 분류)</th><th>D열 (단위)</th><th>E열 (가격)</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>타이레놀 500mg</td><td>해열, 진통</td><td>해열진통제</td><td>10정</td><td>2500</td></tr>
-                <tr><td>판콜에이</td><td>감기, 코막힘</td><td>종합감기약</td><td>1박스</td><td>5800</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <ol>
-            <li>위 순서대로 열 배치 (첫 행은 헤더 — 자동 건너뜀)</li>
-            <li>편집기 하단 <strong>📁 엑셀 업로드</strong> 버튼으로 파일 선택</li>
-            <li>업로드 즉시 모든 행이 가격표로 변환</li>
-          </ol>
-          <div className="help-note">💡 빈 열이 있어도 괜찮습니다. 나중에 편집기에서 수동으로 채울 수 있습니다.</div>
+          <h3>📊 엑셀 DB 검색</h3>
+          <p>기존에 정리해 둔 약품 엑셀 파일을 DB로 불러와 검색할 수 있습니다.</p>
+            <div className="help-table-wrap">
+              <table className="help-table">
+                <thead>
+                  <tr><th>A열 (약명)</th><th>B열 (서브타이틀/분류)</th><th>C열 (증상/효능)</th><th>D열 (부가설명)</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>포박신</td><td>안전한 한방 근육생약</td><td>심한 운동후 / 생리통</td><td>근육 경직 근육통 완화 생약</td></tr>
+                  <tr><td>기넥신F 120mg</td><td>식물성캡슐 은행엽120mg</td><td>말초혈관 / 뇌혈관순환제</td><td>두통 어지러움 귀울림</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <ol>
+              <li>검색창 아래 <strong>📋 엑셀 DB 불러오기</strong> 버튼으로 파일 선택</li>
+              <li>검색창에 약 이름 입력 후 검색 → 엑셀 DB + 공공데이터 API 결과가 함께 표시</li>
+              <li><span className="search-source-badge excel">엑셀</span> 뱃지가 붙은 결과를 클릭하면 해당 약품 정보가 가격표에 자동 입력</li>
+            </ol>
+            <div className="help-note">💡 Electron 앱에서는 최초 1회 파일을 선택하면 경로가 저장되어 다음 실행 시 자동으로 불러옵니다. 엑셀 파일 수정 후 🔄 버튼으로 새로고침할 수 있습니다.</div>
         </div>
       </div>
 
@@ -345,7 +377,10 @@ function App() {
   const [tagStyle, setTagStyle] = useState<TagStyle>(DEFAULT_TAG_STYLE);
   const [tagSizeMm, setTagSizeMm] = useState(70);
   const [isDesignOpen, setIsDesignOpen] = useState(false);
-  const excelInputRef = useRef<HTMLInputElement>(null);
+  const excelDbInputRef = useRef<HTMLInputElement>(null);
+  const [excelDb, setExcelDb] = useState<ExcelDrugRow[]>([]);
+  const [excelDbPath, setExcelDbPath] = useState('');
+  const [excelSearchResults, setExcelSearchResults] = useState<ExcelDrugRow[]>([]);
 
   const envServiceKey = import.meta.env.VITE_PUBLIC_DATA_SERVICE_KEY as string | undefined;
   const serviceKey = savedServiceKey || envServiceKey;
@@ -381,6 +416,19 @@ function App() {
     if (storedSize) {
       const n = Number(storedSize);
       if (!isNaN(n)) setTagSizeMm(n);
+    }
+
+    // Electron: 저장된 엑셀 DB 경로가 있으면 자동 로드
+    const storedExcelPath = window.localStorage.getItem(EXCEL_DB_PATH_KEY);
+    if (storedExcelPath && isElectron) {
+      setExcelDbPath(storedExcelPath);
+      window.electronAPI!.readExcelFile(storedExcelPath).then((result) => {
+        if (!result) return;
+        try {
+          const dbRows = parseExcelDbFromBase64(result.data);
+          if (dbRows.length > 0) setExcelDb(dbRows);
+        } catch { /* ignore */ }
+      });
     }
   }, [envServiceKey]);
 
@@ -446,6 +494,72 @@ function App() {
     window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider);
   };
 
+  const loadExcelDbFromFile = async (result: ElectronFileResult) => {
+    if (!result) return;
+    try {
+      const dbRows = parseExcelDbFromBase64(result.data);
+      if (dbRows.length === 0) { showToast('엑셀에 데이터가 없습니다.', 'error'); return; }
+      setExcelDb(dbRows);
+      setExcelDbPath(result.filePath);
+      window.localStorage.setItem(EXCEL_DB_PATH_KEY, result.filePath);
+      showToast(`엑셀 DB ${dbRows.length}개 약품 로드 완료`, 'success');
+    } catch {
+      showToast('엑셀 파일을 읽는 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
+  const handleExcelDbClick = async () => {
+    if (isElectron) {
+      const result = await window.electronAPI!.openExcelDialog();
+      loadExcelDbFromFile(result);
+    } else {
+      excelDbInputRef.current?.click();
+    }
+  };
+
+  const handleExcelDbUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][];
+        const dbRows: ExcelDrugRow[] = rows
+          .filter((row) => row.some((cell) => cell !== undefined && cell !== ''))
+          .map((row) => ({
+            itemName: String(row[0] ?? '').trim(),
+            subtitle: String(row[1] ?? '').trim(),
+            symptoms: String(row[2] ?? '').trim(),
+            extra: String(row[3] ?? '').trim(),
+          }));
+        if (dbRows.length === 0) { showToast('엑셀에 데이터가 없습니다.', 'error'); return; }
+        setExcelDb(dbRows);
+        showToast(`엑셀 DB ${dbRows.length}개 약품 로드 완료`, 'success');
+      } catch {
+        showToast('엑셀 파일을 읽는 중 오류가 발생했습니다.', 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+  };
+
+  const applyExcelDrug = (row: ExcelDrugRow) => {
+    const symptoms = [row.symptoms, row.extra].filter(Boolean).join(', ');
+    setPriceTags((prev) => prev.map((tag) => tag.id === selectedTag.id ? {
+      ...tag,
+      itemName: row.itemName,
+      originalItemName: row.itemName,
+      symptoms: symptoms || '증상 정보 없음',
+      category: row.subtitle,
+    } : tag));
+    setSearchResults([]);
+    setExcelSearchResults([]);
+    showToast('엑셀 DB에서 약 정보를 불러왔습니다.', 'success');
+  };
+
   const applyDrugToSelectedTag = (drug: EasyDrugApiItem) => {
     const rawSymptoms = drug.efcyQesitm ? stripHtml(drug.efcyQesitm) : '증상 정보 없음';
     setPriceTags((prev) => prev.map((tag) => tag.id === selectedTag.id ? {
@@ -460,11 +574,26 @@ function App() {
 
   const searchDrug = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (!searchQuery.trim()) { showToast('약 이름을 입력해주세요.', 'info'); return; }
-    if (!serviceKey) { setIsApiKeyBoxOpen(true); showToast('API 키를 먼저 입력하고 저장해주세요.', 'error'); return; }
+    const q = searchQuery.trim();
+    if (!q) { showToast('약 이름을 입력해주세요.', 'info'); return; }
+
+    // 엑셀 DB 검색 (항상 실행)
+    const excelMatches = excelDb.filter((row) => row.itemName.toLowerCase().includes(q.toLowerCase()));
+    setExcelSearchResults(excelMatches);
+
+    // API 검색
+    if (!serviceKey) {
+      if (excelMatches.length > 0) {
+        showToast(`엑셀 DB에서 ${excelMatches.length}개 발견 (API 키 미설정)`, 'info');
+        return;
+      }
+      setIsApiKeyBoxOpen(true);
+      showToast('API 키를 먼저 입력하고 저장해주세요.', 'error');
+      return;
+    }
     setIsSearching(true);
     try {
-      const response = await fetch(createDrugSearchUrl(serviceKey, searchQuery.trim()));
+      const response = await fetch(createDrugSearchUrl(serviceKey, q));
       const responseText = await response.text();
       if (!response.ok) {
         setHasServiceKeyError(true); setIsApiKeyBoxOpen(true);
@@ -477,10 +606,11 @@ function App() {
       }
       setHasServiceKeyError(false);
       const drugs = normalizeItems(data.items);
-      if (drugs.length === 0) { showToast('검색 결과가 없습니다.', 'info'); return; }
-      if (drugs.length === 1) { applyDrugToSelectedTag(drugs[0]); return; }
+      if (drugs.length === 0 && excelMatches.length === 0) { showToast('검색 결과가 없습니다.', 'info'); return; }
+      if (drugs.length === 1 && excelMatches.length === 0) { applyDrugToSelectedTag(drugs[0]); return; }
       setSearchResults(drugs);
-      showToast(`${drugs.length}개의 검색 결과가 있습니다. 적용할 약을 선택해주세요.`, 'info');
+      const total = drugs.length + excelMatches.length;
+      showToast(`${total}개의 검색 결과가 있습니다. 적용할 약을 선택해주세요.`, 'info');
     } catch (error) {
       console.error('API 호출 에러:', error);
       showToast(error instanceof Error ? error.message : '데이터를 불러오는 중 문제가 발생했습니다.', 'error');
@@ -641,36 +771,6 @@ function App() {
     setSearchResults([]);
   };
 
-  const handleExcelUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][];
-        const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell !== undefined && cell !== ''));
-        if (dataRows.length === 0) { showToast('엑셀에 데이터가 없습니다. 두 번째 행부터 입력해주세요.', 'error'); return; }
-        const newTags: DrugInfo[] = dataRows.map((row) => ({
-          id: crypto.randomUUID(),
-          itemName: String(row[0] ?? '').trim(),
-          symptoms: String(row[1] ?? '').trim(),
-          category: String(row[2] ?? '').trim(),
-          unit: String(row[3] ?? '').trim(),
-          price: String(row[4] ?? '').trim(),
-        }));
-        setPriceTags(newTags);
-        setSelectedTagId(newTags[0].id);
-        showToast(`엑셀에서 ${newTags.length}개의 가격표를 불러왔습니다.`, 'success');
-      } catch {
-        showToast('엑셀 파일을 읽는 중 오류가 발생했습니다.', 'error');
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    event.target.value = '';
-  };
 
   const updateTagStyle = (key: keyof TagStyle, value: string | number) => {
     const next = { ...tagStyle, [key]: value };
@@ -756,30 +856,45 @@ function App() {
                 <button type="button" onClick={duplicatePriceTag}>복제</button>
                 <button type="button" onClick={deletePriceTag}>삭제</button>
               </div>
-              <div className="excel-upload-row">
-                <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleExcelUpload} />
-                <button type="button" className="excel-upload-btn" onClick={() => excelInputRef.current?.click()}>
-                  📊 엑셀로 대량 가져오기
-                </button>
-              </div>
             </div>
 
             {/* ② 검색 */}
-            <form className="search-box" onSubmit={searchDrug}>
-              <input type="text" placeholder="약 이름 검색 (예: 타이레놀, 판콜)" value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)} />
-              <button type="submit" disabled={!canSearch}>{isSearching ? '검색 중…' : '🔍 검색'}</button>
-            </form>
+            <div className="search-row">
+              <form className="search-box" onSubmit={searchDrug}>
+                <input type="text" placeholder="약 이름 검색 (예: 타이레놀, 판콜)" value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)} />
+                <button type="submit" disabled={!canSearch}>{isSearching ? '검색 중…' : '🔍 검색'}</button>
+              </form>
+              <div className="excel-db-row">
+                {!isElectron && <input ref={excelDbInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleExcelDbUpload} />}
+                <button type="button" className="excel-db-btn" onClick={handleExcelDbClick}>
+                  📋 {excelDb.length > 0 ? `엑셀 DB (${excelDb.length}개)` : '엑셀 DB 불러오기'}
+                </button>
+                {isElectron && excelDbPath && excelDb.length > 0 && (
+                  <button type="button" className="excel-db-refresh-btn" title="엑셀 파일 새로고침" onClick={async () => {
+                    const result = await window.electronAPI!.readExcelFile(excelDbPath);
+                    loadExcelDbFromFile(result);
+                  }}>🔄</button>
+                )}
+              </div>
+              {excelDbPath && <span className="excel-db-path" title={excelDbPath}>{excelDbPath.split(/[\\/]/).pop()}</span>}
+            </div>
 
-            {searchResults.length > 0 && (
+            {(excelSearchResults.length > 0 || searchResults.length > 0) && (
               <div className="search-results">
                 <div className="search-results-header">
                   <strong>검색 결과</strong>
-                  <span>{searchResults.length}개</span>
+                  <span>{excelSearchResults.length + searchResults.length}개</span>
                 </div>
+                {excelSearchResults.map((row, index) => (
+                  <button className="search-result-item excel" key={`excel-${index}-${row.itemName}`} type="button" onClick={() => applyExcelDrug(row)}>
+                    <strong><span className="search-source-badge excel">엑셀</span> {row.itemName}</strong>
+                    <span>{[row.subtitle, row.symptoms, row.extra].filter(Boolean).join(' · ')}</span>
+                  </button>
+                ))}
                 {searchResults.map((drug, index) => (
-                  <button className="search-result-item" key={`${index}-${drug.itemName}`} type="button" onClick={() => applyDrugToSelectedTag(drug)}>
-                    <strong>{getDisplayValue(drug.itemName ?? '', '제품명 없음')}</strong>
+                  <button className="search-result-item" key={`api-${index}-${drug.itemName}`} type="button" onClick={() => applyDrugToSelectedTag(drug)}>
+                    <strong><span className="search-source-badge api">API</span> {getDisplayValue(drug.itemName ?? '', '제품명 없음')}</strong>
                     <span>{getDisplayValue(stripHtml(drug.efcyQesitm ?? ''), '효능 정보 없음')}</span>
                   </button>
                 ))}
