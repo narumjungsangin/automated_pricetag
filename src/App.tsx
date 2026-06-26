@@ -89,6 +89,7 @@ const FOLLOWUP_AI_PROMPT = `당신은 약국 가격표 편집 전문가입니다
 {"itemName": null, "symptoms": null, "category": null, "unit": null, "price": null}`;
 const TAG_STYLE_STORAGE_KEY = 'pharmacy-tag-style';
 const TAG_SIZE_STORAGE_KEY = 'pharmacy-tag-size';
+const TAG_HEIGHT_STORAGE_KEY = 'pharmacy-tag-height';
 const EXCEL_DB_PATH_KEY = 'pharmacy-excel-db-path';
 
 type ElectronFileResult = { filePath: string; data: string } | null;
@@ -142,10 +143,10 @@ const COLOR_THEMES: { label: string; headerBg: string; headerText: string; categ
 ];
 
 const SIZE_PRESETS = [
-  { label: '소 (60mm)', value: 60, fontHeader: 20, fontSymptoms: 14, fontCategory: 10, fontFooter: 12 },
-  { label: '중 (70mm)', value: 70, fontHeader: 26, fontSymptoms: 18, fontCategory: 13, fontFooter: 16 },
-  { label: '대 (85mm)', value: 85, fontHeader: 32, fontSymptoms: 22, fontCategory: 16, fontFooter: 19 },
-  { label: '특대 (100mm)', value: 100, fontHeader: 38, fontSymptoms: 26, fontCategory: 19, fontFooter: 22 },
+  { label: '소 (60mm)', value: 60, heightMm: 39.2, fontHeader: 20, fontSymptoms: 14, fontCategory: 10, fontFooter: 12 },
+  { label: '중 (70mm)', value: 70, heightMm: null, fontHeader: 26, fontSymptoms: 18, fontCategory: 13, fontFooter: 16 },
+  { label: '대 (85mm)', value: 85, heightMm: null, fontHeader: 32, fontSymptoms: 22, fontCategory: 16, fontFooter: 19 },
+  { label: '특대 (100mm)', value: 100, heightMm: null, fontHeader: 38, fontSymptoms: 26, fontCategory: 19, fontFooter: 22 },
 ];
 
 const stripHtml = (value: string) => value.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim();
@@ -376,6 +377,11 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [tagStyle, setTagStyle] = useState<TagStyle>(DEFAULT_TAG_STYLE);
   const [tagSizeMm, setTagSizeMm] = useState(70);
+  const [tagHeightMm, setTagHeightMm] = useState<number | null>(null);
+  const [customWidthInput, setCustomWidthInput] = useState('');
+  const [customHeightInput, setCustomHeightInput] = useState('');
+  const [keepAspectRatio, setKeepAspectRatio] = useState(true);
+  const [isSizeSliderOpen, setIsSizeSliderOpen] = useState(false);
   const [isDesignOpen, setIsDesignOpen] = useState(false);
   const excelDbInputRef = useRef<HTMLInputElement>(null);
   const [excelDb, setExcelDb] = useState<ExcelDrugRow[]>([]);
@@ -416,6 +422,11 @@ function App() {
     if (storedSize) {
       const n = Number(storedSize);
       if (!isNaN(n)) setTagSizeMm(n);
+    }
+    const storedHeight = window.localStorage.getItem(TAG_HEIGHT_STORAGE_KEY);
+    if (storedHeight) {
+      const h = Number(storedHeight);
+      if (!isNaN(h)) setTagHeightMm(h);
     }
 
     // Electron: 저장된 엑셀 DB 경로가 있으면 자동 로드
@@ -547,7 +558,7 @@ function App() {
   };
 
   const applyExcelDrug = (row: ExcelDrugRow) => {
-    const symptoms = [row.symptoms, row.extra].filter(Boolean).join(', ');
+    const symptoms = [row.symptoms, row.extra].filter(Boolean).join('\n');
     setPriceTags((prev) => prev.map((tag) => tag.id === selectedTag.id ? {
       ...tag,
       itemName: row.itemName,
@@ -786,12 +797,59 @@ function App() {
 
   const updateTagSize = (mm: number) => {
     setTagSizeMm(mm);
+    setCustomWidthInput('');
     window.localStorage.setItem(TAG_SIZE_STORAGE_KEY, String(mm));
     const preset = SIZE_PRESETS.find((p) => p.value === mm);
+    const presetHeight = preset?.heightMm ?? null;
+    setTagHeightMm(presetHeight);
+    setCustomHeightInput('');
+    if (presetHeight !== null) {
+      window.localStorage.setItem(TAG_HEIGHT_STORAGE_KEY, String(presetHeight));
+    } else {
+      window.localStorage.removeItem(TAG_HEIGHT_STORAGE_KEY);
+    }
     if (preset) {
       const next = { ...tagStyle, fontHeader: preset.fontHeader, fontSymptoms: preset.fontSymptoms, fontCategory: preset.fontCategory, fontFooter: preset.fontFooter };
       setTagStyle(next);
       window.localStorage.setItem(TAG_STYLE_STORAGE_KEY, JSON.stringify(next));
+    }
+  };
+
+  const currentRatio = tagHeightMm !== null ? tagHeightMm / tagSizeMm : 0.77;
+
+  const handleCustomWidthChange = (val: string) => {
+    setCustomWidthInput(val);
+    if (keepAspectRatio && val !== '') {
+      const w = parseFloat(val);
+      if (!isNaN(w)) {
+        setCustomHeightInput((w * currentRatio).toFixed(1));
+      }
+    }
+  };
+
+  const handleCustomHeightChange = (val: string) => {
+    setCustomHeightInput(val);
+    if (keepAspectRatio && val !== '') {
+      const h = parseFloat(val);
+      if (!isNaN(h)) {
+        setCustomWidthInput((h / currentRatio).toFixed(1));
+      }
+    }
+  };
+
+  const applyCustomSize = () => {
+    const w = parseFloat(customWidthInput);
+    const h = parseFloat(customHeightInput);
+    if (!isNaN(w) && w >= 30 && w <= 200) {
+      setTagSizeMm(w);
+      window.localStorage.setItem(TAG_SIZE_STORAGE_KEY, String(w));
+    }
+    if (!isNaN(h) && h >= 20 && h <= 200) {
+      setTagHeightMm(h);
+      window.localStorage.setItem(TAG_HEIGHT_STORAGE_KEY, String(h));
+    } else if (customHeightInput === '') {
+      setTagHeightMm(null);
+      window.localStorage.removeItem(TAG_HEIGHT_STORAGE_KEY);
     }
   };
 
@@ -807,6 +865,7 @@ function App() {
     '--tag-border': tagStyle.borderColor,
     '--tag-width-px': `${tagWidthPx}px`,
     '--tag-size-mm': `${tagSizeMm}mm`,
+    ...(tagHeightMm !== null ? { '--tag-height-mm': `${tagHeightMm}mm` } : {}),
     '--tag-font-scale': `${tagFontScale}`,
     '--tag-font-header': `${tagStyle.fontHeader}px`,
     '--tag-font-symptoms': `${tagStyle.fontSymptoms}px`,
@@ -999,10 +1058,58 @@ function App() {
                     <div className="size-preset-btns">
                       {SIZE_PRESETS.map((p) => (
                         <button key={p.value} type="button"
-                          className={tagSizeMm === p.value ? 'size-preset-btn active' : 'size-preset-btn'}
+                          className={tagSizeMm === p.value && customWidthInput === '' && customHeightInput === '' ? 'size-preset-btn active' : 'size-preset-btn'}
                           onClick={() => updateTagSize(p.value)}>{p.label}</button>
                       ))}
                     </div>
+                    <div className="design-custom-size-row">
+                      <span className="design-label">직접 입력</span>
+                      <div className="design-custom-size-inputs">
+                        <label className="design-custom-size-label">
+                          가로
+                          <input type="number" className="design-custom-size-input" min={30} max={200} step={0.5}
+                            placeholder={String(tagSizeMm)}
+                            value={customWidthInput}
+                            onChange={(e) => handleCustomWidthChange(e.target.value)} />
+                          <small>mm</small>
+                        </label>
+                        <label className="design-custom-size-label">
+                          세로
+                          <input type="number" className="design-custom-size-input" min={20} max={200} step={0.5}
+                            placeholder={tagHeightMm !== null ? String(tagHeightMm) : `${(tagSizeMm * 0.77).toFixed(1)}`}
+                            value={customHeightInput}
+                            onChange={(e) => handleCustomHeightChange(e.target.value)} />
+                          <small>mm</small>
+                        </label>
+                        <label className="design-custom-size-label design-aspect-label">
+                          <input type="checkbox" checked={keepAspectRatio} onChange={(e) => setKeepAspectRatio(e.target.checked)} />
+                          비율 유지
+                        </label>
+                        <button type="button" className="design-custom-size-btn" onClick={applyCustomSize}>적용</button>
+                        <button type="button" className={`design-custom-size-toggle${isSizeSliderOpen ? ' active' : ''}`} onClick={() => setIsSizeSliderOpen((p) => !p)} title="슬라이더">↕</button>
+                      </div>
+                    </div>
+                    {isSizeSliderOpen && (
+                      <div className="design-size-slider-box">
+                        <div className="design-font-row">
+                          <span className="design-label">가로</span>
+                          <input type="range" min={30} max={200} step={0.5}
+                            value={customWidthInput !== '' ? parseFloat(customWidthInput) : tagSizeMm}
+                            onChange={(e) => { handleCustomWidthChange(e.target.value); }}
+                          />
+                          <span className="design-font-val">{customWidthInput !== '' ? parseFloat(customWidthInput).toFixed(1) : tagSizeMm}<small>mm</small></span>
+                        </div>
+                        <div className="design-font-row">
+                          <span className="design-label">세로</span>
+                          <input type="range" min={20} max={200} step={0.5}
+                            value={customHeightInput !== '' ? parseFloat(customHeightInput) : (tagHeightMm !== null ? tagHeightMm : parseFloat((tagSizeMm * 0.77).toFixed(1)))}
+                            onChange={(e) => { handleCustomHeightChange(e.target.value); }}
+                          />
+                          <span className="design-font-val">{customHeightInput !== '' ? parseFloat(customHeightInput).toFixed(1) : (tagHeightMm !== null ? tagHeightMm : (tagSizeMm * 0.77).toFixed(1))}<small>mm</small></span>
+                        </div>
+                        <button type="button" className="design-custom-size-btn" style={{ alignSelf: 'flex-end' }} onClick={applyCustomSize}>적용</button>
+                      </div>
+                    )}
                   </div>
                   <div className="design-font-grid">
                     <div className="design-font-row">
@@ -1052,8 +1159,8 @@ function App() {
                       })}
                     </div>
                   </div>
-                  <details className="design-advanced">
-                    <summary>세부 색상 직접 지정</summary>
+                  <div className="design-advanced">
+                    <span className="design-label">세부 색상 직접 지정</span>
                     <div className="design-color-grid">
                       <div className="design-color-row">
                         <span className="design-label">헤더 배경</span>
@@ -1091,7 +1198,7 @@ function App() {
                         <span className="design-hex">{tagStyle.borderColor}</span>
                       </div>
                     </div>
-                  </details>
+                  </div>
                 </div>
               )}
             </div>
